@@ -1,19 +1,45 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Menu, X, FileText, LayoutDashboard, LogOut, User } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
-export function Navbar({ user }: { user: { email?: string } | null }) {
+export function Navbar() {
   const [open, setOpen] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [mounted, setMounted] = useState(false);
   const router = useRouter();
   const supabase = createClient();
+
+  useEffect(() => {
+    setMounted(true);
+    const getUser = async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        setUser(data.user);
+      } catch {
+        setUser(null);
+      }
+    };
+    getUser();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setOpen(false);
+    setUser(null);
     router.refresh();
     router.push("/");
   };
@@ -51,7 +77,7 @@ export function Navbar({ user }: { user: { email?: string } | null }) {
           </div>
 
           <div className="hidden md:flex items-center gap-3">
-            {user ? (
+            {mounted && user ? (
               <>
                 <Link
                   href="/dashboard"
@@ -68,7 +94,7 @@ export function Navbar({ user }: { user: { email?: string } | null }) {
                   خروج
                 </button>
               </>
-            ) : (
+            ) : mounted ? (
               <>
                 <Link
                   href="/auth/login"
@@ -83,6 +109,8 @@ export function Navbar({ user }: { user: { email?: string } | null }) {
                   حساب جديد
                 </Link>
               </>
+            ) : (
+              <div className="w-32 h-9" />
             )}
           </div>
 
@@ -119,7 +147,7 @@ export function Navbar({ user }: { user: { email?: string } | null }) {
               >
                 الأسعار
               </Link>
-              {user ? (
+              {mounted && user ? (
                 <>
                   <Link
                     href="/dashboard"
@@ -136,7 +164,7 @@ export function Navbar({ user }: { user: { email?: string } | null }) {
                     تسجيل خروج
                   </button>
                 </>
-              ) : (
+              ) : mounted ? (
                 <>
                   <Link
                     href="/auth/login"
@@ -153,7 +181,7 @@ export function Navbar({ user }: { user: { email?: string } | null }) {
                     حساب جديد
                   </Link>
                 </>
-              )}
+              ) : null}
             </div>
           </div>
         )}

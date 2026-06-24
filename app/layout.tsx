@@ -3,8 +3,6 @@ import { Tajawal } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "sonner";
 import { Navbar } from "@/components/Navbar";
-import { createClient } from "@/lib/supabase";
-import { cookies } from "next/headers";
 
 const tajawal = Tajawal({
   subsets: ["arabic", "latin"],
@@ -58,28 +56,15 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-async function getUser() {
-  try {
-    const cookieStore = cookies();
-    const supabase = createClient();
-    const { data } = await supabase.auth.getUser();
-    return data.user;
-  } catch {
-    return null;
-  }
-}
-
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getUser();
-
   return (
     <html lang="ar" dir="rtl" className={tajawal.variable}>
       <body className="font-sans antialiased min-h-screen">
-        <Navbar user={user} />
+        <Navbar />
         <main>{children}</main>
         <Toaster position="top-center" richColors dir="rtl" />
       </body>
