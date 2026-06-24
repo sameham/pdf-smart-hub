@@ -13,5 +13,5 @@ export async function compressPDF(file: File): Promise<Blob> {
     objectsPerTick: 100,
   });
 
-  return new Blob([pdfBytes], { type: "application/pdf" });
+  return new Blob([new Uint8Array(pdfBytes)], { type: "application/pdf" });
 }

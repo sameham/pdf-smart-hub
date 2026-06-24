@@ -47,7 +47,7 @@ export async function splitPDF(
       : `${baseName}_pages_${range.from}-${range.to}.pdf`;
 
     results.push({
-      blob: new Blob([pdfBytes], { type: "application/pdf" }),
+      blob: new Blob([new Uint8Array(pdfBytes)], { type: "application/pdf" }),
       filename,
     });
   }
