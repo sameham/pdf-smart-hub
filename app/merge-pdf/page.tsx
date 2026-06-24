@@ -6,8 +6,9 @@ import { ProcessingStatus } from "@/components/ProcessingStatus";
 import { ToolLayout } from "@/components/ToolLayout";
 import { usePDFProcessor } from "@/hooks/usePDFProcessor";
 import { mergePDFs } from "@/lib/pdf/merge";
+import { logProcessingHistory } from "@/lib/pdf/history";
 import { downloadBlob } from "@/lib/utils";
-import { Combine, Download } from "lucide-react";
+import { Combine, Download, Lightbulb } from "lucide-react";
 import { toast } from "sonner";
 
 export default function MergePDFPage() {
@@ -32,10 +33,25 @@ export default function MergePDFPage() {
     }
     try {
       const blob = await process(files);
+      const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+      const filename = `merged_${Date.now()}.pdf`;
+
       downloadBlob(blob, "merged.pdf");
-      toast.success("تم الدمج بنجاح!");
+
+      // حفظ في السجل
+      await logProcessingHistory({
+        toolType: "merge",
+        fileName: filename,
+        fileSize: totalSize,
+        metadata: {
+          files_count: files.length,
+          original_files: files.map((f) => f.name),
+        },
+      });
+
+      toast.success(`تم دمج ${files.length} ملفات بنجاح!`);
     } catch (err) {
-      toast.error("فشل الدمج");
+      toast.error(err instanceof Error ? err.message : "فشل الدمج");
     }
   };
 
@@ -58,17 +74,25 @@ export default function MergePDFPage() {
       <button
         onClick={handleMerge}
         disabled={files.length < 2 || state.status === "processing"}
-        className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-brand-600 hover:bg-brand-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-xl font-medium transition shadow-lg shadow-brand-500/20"
+        className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-xl font-medium transition shadow-lg shadow-blue-500/20"
       >
         <Download className="w-5 h-5" />
-        دمج الملفات وتحميل النتيجة
+        دمج {files.length > 0 && `(${files.length} ملف)`} وتحميل النتيجة
       </button>
 
-      {files.length === 0 && (
-        <p className="text-center text-sm text-gray-500">
-          💡 نصيحة: يمكنك ترتيب الملفات قبل الدمج باستخدام الأسهم
-        </p>
-      )}
+      <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-xl">
+        <div className="flex items-start gap-2 text-sm text-blue-700 dark:text-blue-300">
+          <Lightbulb className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium mb-1">💡 نصائح:</p>
+            <ul className="space-y-1 text-xs">
+              <li>• يمكنك ترتيب الملفات قبل الدمج باستخدام الأسهم</li>
+              <li>• كل المعالجة تتم داخل متصفحك - ملفاتك آمنة</li>
+              <li>• الحد الأقصى لكل ملف 50 ميجابايت</li>
+            </ul>
+          </div>
+        </div>
+      </div>
     </ToolLayout>
   );
 }

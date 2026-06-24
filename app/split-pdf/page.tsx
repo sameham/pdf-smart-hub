@@ -6,8 +6,9 @@ import { ProcessingStatus } from "@/components/ProcessingStatus";
 import { ToolLayout } from "@/components/ToolLayout";
 import { usePDFProcessor } from "@/hooks/usePDFProcessor";
 import { splitPDF, type SplitRange } from "@/lib/pdf/split";
+import { logProcessingHistory } from "@/lib/pdf/history";
 import { downloadMultipleBlobs } from "@/lib/utils";
-import { Split, Download, Plus, Trash2 } from "lucide-react";
+import { Split, Download, Plus, Trash2, Lightbulb } from "lucide-react";
 import { toast } from "sonner";
 
 export default function SplitPDFPage() {
@@ -33,22 +34,38 @@ export default function SplitPDFPage() {
     }
     const valid = ranges.every((r) => r.from > 0 && r.to >= r.from);
     if (!valid) {
-      toast.error("تأكد من صحة النطاقات");
+      toast.error("تأكد من صحة النطاقات (من يجب أن يكون أقل من أو يساوي إلى)");
       return;
     }
     try {
       const results = await process({ file: files[0], ranges });
       downloadMultipleBlobs(results);
+
+      await logProcessingHistory({
+        toolType: "split",
+        fileName: files[0].name,
+        fileSize: files[0].size,
+        metadata: {
+          ranges_count: ranges.length,
+          ranges: ranges,
+          output_files: results.length,
+        },
+      });
+
       toast.success(`تم التقسيم إلى ${results.length} ملف`);
     } catch (err) {
-      toast.error("فشل التقسيم");
+      toast.error(err instanceof Error ? err.message : "فشل التقسيم");
     }
   };
 
   const addRange = () => setRanges([...ranges, { from: 1, to: 1 }]);
   const removeRange = (idx: number) =>
     setRanges(ranges.filter((_, i) => i !== idx));
-  const updateRange = (idx: number, key: "from" | "to", value: number) => {
+  const updateRange = (
+    idx: number,
+    key: "from" | "to",
+    value: number
+  ) => {
     setRanges(
       ranges.map((r, i) => (i === idx ? { ...r, [key]: value } : r))
     );
@@ -74,7 +91,7 @@ export default function SplitPDFPage() {
             <label className="text-sm font-medium">نطاقات الصفحات</label>
             <button
               onClick={addRange}
-              className="text-sm flex items-center gap-1 text-brand-600 hover:underline"
+              className="text-sm flex items-center gap-1 text-purple-600 hover:underline"
             >
               <Plus className="w-4 h-4" />
               إضافة نطاق
@@ -134,6 +151,20 @@ export default function SplitPDFPage() {
         <Download className="w-5 h-5" />
         تقسيم وتحميل الملفات
       </button>
+
+      <div className="p-4 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-900 rounded-xl">
+        <div className="flex items-start gap-2 text-sm text-purple-700 dark:text-purple-300">
+          <Lightbulb className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium mb-1">💡 أمثلة:</p>
+            <ul className="space-y-1 text-xs">
+              <li>• نطاق واحد (1 إلى 5) → ملف بصفحات 1-5</li>
+              <li>• نطاقين (1-3, 5-7) → ملفين منفصلين</li>
+              <li>• كل صفحة لوحدها: أضف نطاقات (1-1, 2-2, 3-3)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
     </ToolLayout>
   );
 }
