@@ -11,7 +11,7 @@ interface Tool {
   status: "operational" | "degraded" | "down";
   success_rate: number;
   total_uses: number;
-  last_used: string;
+  last_used: string | null;
 }
 
 export default function AdminToolsPage() {
@@ -29,7 +29,7 @@ export default function AdminToolsPage() {
         .from("popular_tools")
         .select("*");
 
-      const toolsData = (data || []).map((t: any) => ({
+      const toolsData: Tool[] = (data || []).map((t: any) => ({
         id: t.tool_type,
         name: t.tool_type.replace("-", " "),
         description: getToolDescription(t.tool_type),
