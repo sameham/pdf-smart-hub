@@ -182,8 +182,6 @@ function getToolDescription(id: string): string {
     merge: "Merge multiple PDF files into one",
     split: "Split PDF into multiple files by page ranges",
     compress: "Reduce PDF file size while maintaining quality",
-    "pdf-to-image": "Convert PDF pages to JPG or PNG images",
-    "image-to-pdf": "Convert multiple images to a single PDF",
     protect: "Add password protection to PDF files",
   };
   return descriptions[id] || "PDF processing tool";
