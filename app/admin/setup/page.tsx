@@ -12,10 +12,16 @@ import {
   Loader2,
   ExternalLink,
   User,
+  CheckCircle2,
+  XCircle,
+  Terminal,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 
-const ADMIN_SCHEMA_SQL = `-- PDF Smart Hub - Admin Dashboard Schema
+const ADMIN_SCHEMA_SQL = `-- ============================================
+-- PDF Smart Hub - Admin Dashboard Schema
+-- ============================================
 
 -- جدول صلاحيات الأدمن
 CREATE TABLE IF NOT EXISTS public.admin_users (
@@ -34,24 +40,32 @@ CREATE INDEX IF NOT EXISTS admin_users_active_idx ON public.admin_users(is_activ
 
 ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Admins can view admin_users" ON public.admin_users;
-CREATE POLICY "Admins can view admin_users"
+-- Policies مرنة جداً - أي logged-in user يقدر يقرأ
+DROP POLICY IF EXISTS "Anyone authenticated can read admin_users" ON public.admin_users;
+CREATE POLICY "Anyone authenticated can read admin_users"
   ON public.admin_users FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.admin_users au
-      WHERE au.id = auth.uid() AND au.is_active = true
-    )
-  );
+  TO authenticated
+  USING (true);
 
 DROP POLICY IF EXISTS "Super admins can manage admin_users" ON public.admin_users;
 CREATE POLICY "Super admins can manage admin_users"
   ON public.admin_users FOR ALL
+  TO authenticated
   USING (
     EXISTS (
       SELECT 1 FROM public.admin_users au
       WHERE au.id = auth.uid() AND au.role = 'super_admin' AND au.is_active = true
     )
+  );
+
+-- بدل الـ RLS المعقد، نسمح للمستخدم بترقية نفسه إذا كان أول أدمن
+DROP POLICY IF EXISTS "Allow first admin bootstrap" ON public.admin_users;
+CREATE POLICY "Allow first admin bootstrap"
+  ON public.admin_users FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    -- لو مفيش أي أدمن، السماح
+    NOT EXISTS (SELECT 1 FROM public.admin_users WHERE is_active = true)
   );
 
 -- سجل نشاط الأدمن
@@ -62,87 +76,46 @@ CREATE TABLE IF NOT EXISTS public.admin_audit_log (
   target_type text,
   target_id text,
   details jsonb DEFAULT '{}'::jsonb,
-  ip_address inet,
-  user_agent text,
   created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS admin_audit_admin_idx ON public.admin_audit_log(admin_id);
-CREATE INDEX IF NOT EXISTS admin_audit_action_idx ON public.admin_audit_log(action);
-CREATE INDEX IF NOT EXISTS admin_audit_created_idx ON public.admin_audit_log(created_at DESC);
-
 ALTER TABLE public.admin_audit_log ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Admins can view audit log" ON public.admin_audit_log;
-CREATE POLICY "Admins can view audit log"
+DROP POLICY IF EXISTS "Admins can view audit" ON public.admin_audit_log;
+CREATE POLICY "Admins can view audit"
   ON public.admin_audit_log FOR SELECT
+  TO authenticated
   USING (
-    EXISTS (
-      SELECT 1 FROM public.admin_users au
-      WHERE au.id = auth.uid() AND au.is_active = true
-    )
+    EXISTS (SELECT 1 FROM public.admin_users WHERE id = auth.uid() AND is_active = true)
   );
-
-DROP POLICY IF EXISTS "Admins can insert audit log" ON public.admin_audit_log;
-CREATE POLICY "Admins can insert audit log"
-  ON public.admin_audit_log FOR INSERT
-  WITH CHECK (auth.uid() = admin_id);
 
 -- إعدادات الموقع
 CREATE TABLE IF NOT EXISTS public.site_settings (
   key text PRIMARY KEY,
   value jsonb NOT NULL,
   description text,
-  updated_at timestamp with time zone DEFAULT now() NOT NULL,
-  updated_by uuid REFERENCES auth.users(id)
+  updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 ALTER TABLE public.site_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone reads settings" ON public.site_settings;
+CREATE POLICY "Anyone reads settings" ON public.site_settings FOR SELECT USING (true);
 
-DROP POLICY IF EXISTS "Anyone can read public settings" ON public.site_settings;
-CREATE POLICY "Anyone can read public settings"
-  ON public.site_settings FOR SELECT USING (true);
-
-DROP POLICY IF EXISTS "Admins can manage settings" ON public.site_settings;
-CREATE POLICY "Admins can manage settings"
-  ON public.site_settings FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.admin_users au
-      WHERE au.id = auth.uid() AND au.is_active = true
-    )
-  );
+DROP POLICY IF EXISTS "Admins manage settings" ON public.site_settings;
+CREATE POLICY "Admins manage settings" ON public.site_settings FOR ALL
+  TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.admin_users WHERE id = auth.uid() AND is_active = true));
 
 INSERT INTO public.site_settings (key, value, description) VALUES
   ('site_name', '"PDF Smart Hub"'::jsonb, 'اسم الموقع'),
-  ('site_description', '"منصة عربية لمعالجة ملفات PDF"'::jsonb, 'وصف الموقع'),
   ('maintenance_mode', 'false'::jsonb, 'وضع الصيانة'),
   ('max_file_size_mb', '50'::jsonb, 'الحد الأقصى لحجم الملف'),
-  ('daily_operations_limit', '100'::jsonb, 'عدد العمليات اليومية للمستخدم المجاني'),
-  ('enable_signup', 'true'::jsonb, 'السماح بإنشاء حسابات جديدة'),
-  ('contact_email', '"admin@pdfsmarthub.com"'::jsonb, 'بريد التواصل')
+  ('daily_operations_limit', '100'::jsonb, 'عدد العمليات اليومية')
 ON CONFLICT (key) DO NOTHING;
 
--- Helper Functions
+-- Helper Function
 CREATE OR REPLACE FUNCTION public.is_admin(check_user_id uuid)
 RETURNS boolean LANGUAGE sql SECURITY DEFINER STABLE AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.admin_users
-    WHERE id = check_user_id AND is_active = true
-  );
-$$;
-
-CREATE OR REPLACE FUNCTION public.has_permission(check_user_id uuid, required_role text)
-RETURNS boolean LANGUAGE sql SECURITY DEFINER STABLE AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.admin_users
-    WHERE id = check_user_id AND is_active = true
-      AND (
-        role = 'super_admin'
-        OR (required_role = 'admin' AND role IN ('admin', 'super_admin'))
-        OR (required_role = 'moderator' AND role IN ('moderator', 'admin', 'super_admin'))
-      )
-  );
+  SELECT EXISTS (SELECT 1 FROM public.admin_users WHERE id = check_user_id AND is_active = true);
 $$;
 
 -- Views
@@ -163,7 +136,6 @@ SELECT
   tool_type,
   COUNT(*) AS usage_count,
   COUNT(DISTINCT user_id) AS unique_users,
-  AVG(file_size)::bigint AS avg_file_size,
   MAX(created_at) AS last_used
 FROM public.processing_history
 WHERE created_at > NOW() - INTERVAL '30 days'
@@ -183,87 +155,126 @@ SELECT
 FROM auth.users u
 LEFT JOIN public.admin_users au ON au.id = u.id
 LEFT JOIN LATERAL (
-  SELECT
-    COUNT(*) AS op_count,
-    MAX(created_at) AS last_operation
-  FROM public.processing_history ph
-  WHERE ph.user_id = u.id
+  SELECT COUNT(*) AS op_count, MAX(created_at) AS last_operation
+  FROM public.processing_history ph WHERE ph.user_id = u.id
 ) stats ON true
 ORDER BY u.created_at DESC;`;
 
-const SETUP_ADMIN_SQL = `-- بعد ما تشغّل الـ schema فوق، شغّل الـ SQL ده لإضافة أول سوبر أدمن
--- غيّر 'your-email@example.com' بإيميلك
-
-INSERT INTO public.admin_users (id, role, is_active, notes)
-SELECT
-  id,
-  'super_admin',
-  true,
-  'Initial super admin'
-FROM auth.users
-WHERE email = 'YOUR_EMAIL_HERE'
-ON CONFLICT (id) DO UPDATE
-SET role = 'super_admin', is_active = true;`;
-
 export default function AdminSetupPage() {
-  const [copied, setCopied] = useState(false);
-  const [email, setEmail] = useState("");
-  const [promoting, setPromoting] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [email, setEmail] = useState("sameham3@gmail.com");
+  const [userId, setUserId] = useState("");
   const [checking, setChecking] = useState(false);
-  const [tableExists, setTableExists] = useState<boolean | null>(null);
+  const [promoting, setPromoting] = useState(false);
+  const [status, setStatus] = useState<{
+    tableExists: boolean;
+    userIsAdmin: boolean;
+    currentUser: any;
+    adminsCount: number;
+    error?: string;
+  } | null>(null);
   const router = useRouter();
 
-  const copySchema = async () => {
-    await navigator.clipboard.writeText(ADMIN_SCHEMA_SQL);
-    setCopied(true);
-    toast.success("✅ Schema SQL copied! افتح Supabase والصقه");
-    setTimeout(() => setCopied(false), 3000);
+  const copyText = async (text: string, key: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(key);
+    toast.success("✅ تم النسخ");
+    setTimeout(() => setCopied(null), 2000);
   };
 
-  const checkSetup = async () => {
+  const checkStatus = async () => {
     setChecking(true);
+    setStatus(null);
     try {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from("admin_users")
-        .select("id")
-        .limit(1);
 
-      if (error) {
-        if (error.code === "PGRST205") {
-          setTableExists(false);
-          toast.error("الجدول مش موجود - شغّل الـ SQL أولاً");
-        } else {
-          toast.error("خطأ: " + error.message);
-        }
-      } else {
-        setTableExists(true);
-        toast.success("✅ الجدول موجود!");
+      // 1. Get current user
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) {
+        setStatus({
+          tableExists: false,
+          userIsAdmin: false,
+          currentUser: null,
+          adminsCount: 0,
+          error: "Not logged in - سجل دخول من /auth/login أولاً",
+        });
+        setChecking(false);
+        return;
       }
-    } catch (err) {
-      toast.error("فشل التحقق");
+
+      setUserId(userData.user.id);
+
+      // 2. Check if admin_users table exists
+      const { data: adminData, error: adminError } = await supabase
+        .from("admin_users")
+        .select("*")
+        .limit(10);
+
+      if (adminError) {
+        setStatus({
+          tableExists: false,
+          userIsAdmin: false,
+          currentUser: userData.user,
+          adminsCount: 0,
+          error: adminError.message,
+        });
+        setChecking(false);
+        return;
+      }
+
+      // 3. Check if current user is admin
+      const userIsAdmin = adminData?.some(
+        (a: any) => a.id === userData.user.id && a.is_active
+      );
+
+      setStatus({
+        tableExists: true,
+        userIsAdmin: userIsAdmin || false,
+        currentUser: userData.user,
+        adminsCount: adminData?.length || 0,
+      });
+    } catch (err: any) {
+      setStatus({
+        tableExists: false,
+        userIsAdmin: false,
+        currentUser: null,
+        adminsCount: 0,
+        error: err?.message || "Unknown error",
+      });
     } finally {
       setChecking(false);
     }
   };
 
   const promoteSelf = async () => {
-    if (!email) {
-      toast.error("اكتب إيميلك أولاً");
+    if (!userId) {
+      toast.error("شغل الفحص أولاً");
       return;
     }
     setPromoting(true);
     try {
       const supabase = createClient();
-      const { data, error } = await supabase.rpc("promote_to_admin", {
-        user_email: email,
-      });
+      const { error } = await supabase
+        .from("admin_users")
+        .insert({
+          id: userId,
+          role: "super_admin",
+          is_active: true,
+          notes: "Self-promoted via setup wizard",
+        });
 
-      if (error) throw error;
+      if (error) {
+        toast.error("فشل: " + error.message);
+        setPromoting(false);
+        return;
+      }
+
       toast.success("✅ تم! جاري تسجيل الدخول...");
-      router.push("/admin/login");
+      setTimeout(() => {
+        router.push("/admin/login");
+      }, 1000);
     } catch (err: any) {
-      toast.error("فشل: " + (err.message || "تحقق من تشغيل الـ schema"));
+      toast.error("خطأ: " + err?.message);
     } finally {
       setPromoting(false);
     }
@@ -271,58 +282,75 @@ export default function AdminSetupPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4 py-12">
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 items-center justify-center mb-4 shadow-2xl shadow-purple-500/30">
             <Shield className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">Admin Setup</h1>
-          <p className="text-slate-400">
-            إعداد نظام الأدمن - خطوة واحدة
-          </p>
+          <h1 className="text-3xl font-bold text-white mb-2">Admin Setup Wizard</h1>
+          <p className="text-slate-400">إعداد نظام الأدمن - خطوة بخطوة</p>
         </div>
 
-        {/* Status */}
+        {/* Status Check */}
         <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-2xl p-6 mb-6">
-          <button
-            onClick={checkSetup}
-            disabled={checking}
-            className="w-full flex items-center justify-between mb-4"
-          >
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <Database className="w-5 h-5 text-purple-400" />
-              <span className="text-white font-medium">حالة قاعدة البيانات</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {checking && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
-              {tableExists === true && (
-                <span className="px-2 py-1 bg-green-500/20 text-green-300 rounded-full text-xs">
-                  ✅ جاهز
-                </span>
+              فحص الحالة الحالية
+            </h2>
+            <button
+              onClick={checkStatus}
+              disabled={checking}
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition flex items-center gap-2 text-sm disabled:opacity-50"
+            >
+              {checking ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
               )}
-              {tableExists === false && (
-                <span className="px-2 py-1 bg-red-500/20 text-red-300 rounded-full text-xs">
-                  ❌ محتاج إعداد
-                </span>
-              )}
-              {tableExists === null && (
-                <span className="px-2 py-1 bg-slate-700 text-slate-300 rounded-full text-xs">
-                  اضغط للتحقق
-                </span>
-              )}
-            </div>
-          </button>
+              فحص
+            </button>
+          </div>
 
-          {tableExists === false && (
-            <div className="mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-              <p className="text-amber-200 text-sm flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                <span>
-                  الجدول مش موجود. اتبع الخطوات تحت لإعداده.
-                </span>
-              </p>
+          {status && (
+            <div className="space-y-2">
+              <StatusRow
+                ok={status.currentUser !== null}
+                label="المستخدم مسجل دخول"
+                detail={status.currentUser?.email || "Not logged in"}
+              />
+              <StatusRow
+                ok={status.tableExists}
+                label="جدول admin_users موجود"
+                detail={
+                  status.tableExists
+                    ? `يحتوي ${status.adminsCount} صف`
+                    : status.error || "غير موجود"
+                }
+              />
+              <StatusRow
+                ok={status.userIsAdmin}
+                label="أنت أدمن"
+                detail={
+                  status.userIsAdmin
+                    ? "✅ يمكنك تسجيل الدخول كأدمن"
+                    : status.tableExists
+                    ? "تحتاج تضيف نفسك كأدمن"
+                    : "شغّل الـ schema أولاً"
+                }
+              />
             </div>
+          )}
+
+          {status?.userIsAdmin && (
+            <button
+              onClick={() => router.push("/admin/login")}
+              className="mt-4 w-full px-4 py-3 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white rounded-lg font-medium transition flex items-center justify-center gap-2"
+            >
+              <CheckCircle2 className="w-5 h-5" />
+              كل حاجة جاهزة - سجل دخول كأدمن
+            </button>
           )}
         </div>
 
@@ -338,7 +366,7 @@ export default function AdminSetupPage() {
           </div>
 
           <p className="text-slate-300 text-sm mb-4">
-            افتح Supabase SQL Editor والصق الكود ده:
+            افتح Supabase SQL Editor والصق الكود التالي:
           </p>
 
           <div className="flex flex-wrap gap-2 mb-3">
@@ -353,18 +381,18 @@ export default function AdminSetupPage() {
               <ExternalLink className="w-3 h-3" />
             </a>
             <button
-              onClick={copySchema}
+              onClick={() => copyText(ADMIN_SCHEMA_SQL, "schema")}
               className="inline-flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition text-sm"
             >
-              {copied ? (
+              {copied === "schema" ? (
                 <>
                   <Check className="w-4 h-4 text-green-400" />
-                  تم النسخ
+                  تم
                 </>
               ) : (
                 <>
                   <Copy className="w-4 h-4" />
-                  نسخ SQL Schema
+                  نسخ Schema
                 </>
               )}
             </button>
@@ -372,137 +400,114 @@ export default function AdminSetupPage() {
 
           <details className="mt-4">
             <summary className="text-sm text-slate-400 cursor-pointer hover:text-slate-300">
-              عرض SQL
+              عرض SQL ({ADMIN_SCHEMA_SQL.split("\n").length} سطر)
             </summary>
             <pre className="mt-2 p-3 bg-slate-900 rounded-lg text-xs text-slate-300 overflow-x-auto max-h-96 overflow-y-auto">
-              {ADMIN_SCHEMA_SQL.substring(0, 500)}...
+              {ADMIN_SCHEMA_SQL}
             </pre>
           </details>
         </div>
 
-        {/* Step 2: Promote */}
+        {/* Step 2: Promote Self */}
         <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-2xl p-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white font-bold">
               2
             </div>
             <h2 className="text-xl font-bold text-white">
-              أضف نفسك كـ Super Admin
+              ارفع نفسك كأدمن
             </h2>
           </div>
 
           <p className="text-slate-300 text-sm mb-4">
-            اكتب الإيميل اللي عملت بيه حساب على الموقع:
+            بعد ما تشغّل الـ schema، دوس الزر ده عشان يضيفك كأدمن تلقائياً:
           </p>
 
-          <div className="flex gap-2 mb-3">
-            <div className="relative flex-1">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your-email@example.com"
-                className="w-full pl-10 pr-4 py-3 rounded-lg bg-slate-900/50 border border-slate-700 text-white placeholder-slate-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-              />
-            </div>
+          <button
+            onClick={promoteSelf}
+            disabled={promoting || !userId}
+            className="w-full px-6 py-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 disabled:opacity-50 text-white rounded-lg font-medium transition flex items-center justify-center gap-2 text-lg"
+          >
+            {promoting ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5" />
+            )}
+            إضافة كأدمن وتسجيل الدخول
+          </button>
+
+          <div className="mt-4 p-3 bg-slate-900/50 rounded-lg">
+            <p className="text-xs text-slate-400 mb-2">أو SQL يدوي:</p>
+            <pre className="text-xs text-slate-300 overflow-x-auto">
+{`INSERT INTO public.admin_users (id, role, is_active, notes)
+VALUES ('${userId || "YOUR_USER_ID"}', 'super_admin', true, 'Setup wizard');`}
+            </pre>
             <button
-              onClick={async () => {
-                if (!email) {
-                  toast.error("اكتب الإيميل");
-                  return;
-                }
-                await navigator.clipboard.writeText(
-                  SETUP_ADMIN_SQL.replace("YOUR_EMAIL_HERE", email)
-                );
-                toast.success("✅ تم نسخ SQL - الصقه في Supabase");
-              }}
-              className="px-4 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition flex items-center gap-2"
+              onClick={() =>
+                copyText(
+                  `INSERT INTO public.admin_users (id, role, is_active, notes) VALUES ('${userId}', 'super_admin', true, 'Setup wizard');`,
+                  "promote"
+                )
+              }
+              className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs font-medium transition"
             >
-              <Copy className="w-4 h-4" />
+              {copied === "promote" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
               نسخ
             </button>
           </div>
-
-          <div className="bg-slate-900/50 rounded-lg p-3 mb-4">
-            <p className="text-xs text-slate-400 mb-2">SQL اللي هيتنسخ:</p>
-            <pre className="text-xs text-slate-300 overflow-x-auto">
-{`INSERT INTO public.admin_users (id, role, is_active, notes)
-SELECT id, 'super_admin', true, 'Initial super admin'
-FROM auth.users
-WHERE email = '${email || "YOUR_EMAIL_HERE"}'
-ON CONFLICT (id) DO UPDATE
-SET role = 'super_admin', is_active = true;`}
-            </pre>
-          </div>
-
-          <p className="text-xs text-slate-400 mb-4">
-            💡 شغّل الـ SQL ده في Supabase، ثم ارجع واضغط "إضافة كأدمن":
-          </p>
-
-          <div className="flex gap-2">
-            <button
-              onClick={async () => {
-                setPromoting(true);
-                try {
-                  const supabase = createClient();
-                  // Verify user is logged in
-                  const { data: { user } } = await supabase.auth.getUser();
-                  if (!user) {
-                    toast.error("سجل دخول أولاً من /admin/login");
-                    router.push("/admin/login");
-                    return;
-                  }
-
-                  // Check if user is now admin
-                  const { data: adminData, error } = await supabase
-                    .from("admin_users")
-                    .select("role")
-                    .eq("id", user.id)
-                    .eq("is_active", true)
-                    .single();
-
-                  if (error || !adminData) {
-                    toast.error("لسه مش أدمن - شغّل SQL في Supabase أولاً");
-                  } else {
-                    toast.success(`✅ أنت ${adminData.role}!`);
-                    router.push("/admin/login");
-                  }
-                } catch (err) {
-                  toast.error("حدث خطأ");
-                } finally {
-                  setPromoting(false);
-                }
-              }}
-              disabled={promoting}
-              className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 text-white rounded-lg font-medium transition flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20"
-            >
-              {promoting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  <Check className="w-4 h-4" />
-                  تم - جرّب تسجيل الدخول
-                </>
-              )}
-            </button>
-          </div>
         </div>
 
-        {/* Help */}
-        <div className="mt-8 text-center">
-          <p className="text-slate-500 text-sm">
-            محتاج مساعدة؟{" "}
-            <a
-              href="https://supabase.com/docs/guides/database/overview"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-purple-400 hover:text-purple-300 underline"
-            >
-              Supabase Docs
-            </a>
-          </p>
+        {/* Quick Links */}
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <a
+            href="https://supabase.com/dashboard/project/zijqrpevpzgjtttmjwlt/editor"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-4 bg-slate-800/30 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition flex items-center gap-3 text-slate-300"
+          >
+            <Database className="w-5 h-5 text-purple-400" />
+            <div>
+              <p className="font-medium">Supabase Table Editor</p>
+              <p className="text-xs text-slate-500">عرض وتعديل الجداول</p>
+            </div>
+          </a>
+          <a
+            href="https://supabase.com/dashboard/project/zijqrpevpzgjtttmjwlt/auth/users"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-4 bg-slate-800/30 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition flex items-center gap-3 text-slate-300"
+          >
+            <User className="w-5 h-5 text-emerald-400" />
+            <div>
+              <p className="font-medium">Auth Users</p>
+              <p className="text-xs text-slate-500">إدارة المستخدمين</p>
+            </div>
+          </a>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusRow({
+  ok,
+  label,
+  detail,
+}: {
+  ok: boolean;
+  label: string;
+  detail: string;
+}) {
+  return (
+    <div className="flex items-start gap-3 p-3 bg-slate-900/50 rounded-lg">
+      {ok ? (
+        <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+      ) : (
+        <XCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-white font-medium text-sm">{label}</p>
+        <p className="text-xs text-slate-400 truncate">{detail}</p>
       </div>
     </div>
   );
