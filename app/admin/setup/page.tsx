@@ -20,10 +20,16 @@ import {
 import { toast } from "sonner";
 
 const ADMIN_SCHEMA_SQL = `-- ============================================
--- PDF Smart Hub - Admin Dashboard Schema
+-- PDF Smart Hub - Admin Dashboard Schema v2
+-- ⚠️ FIXED: لا توجد infinite recursion
 -- ============================================
 
--- جدول صلاحيات الأدمن
+-- ⚠️ لو الجداول موجودة من قبل، شغّل DROP أولاً:
+-- DROP TABLE IF EXISTS public.site_settings CASCADE;
+-- DROP TABLE IF EXISTS public.admin_audit_log CASCADE;
+-- DROP TABLE IF EXISTS public.admin_users CASCADE;
+
+-- 1. جدول admin_users
 CREATE TABLE IF NOT EXISTS public.admin_users (
   id uuid REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
   role text NOT NULL DEFAULT 'moderator' CHECK (role IN ('super_admin', 'admin', 'moderator', 'support')),
@@ -38,37 +44,74 @@ CREATE TABLE IF NOT EXISTS public.admin_users (
 CREATE INDEX IF NOT EXISTS admin_users_role_idx ON public.admin_users(role);
 CREATE INDEX IF NOT EXISTS admin_users_active_idx ON public.admin_users(is_active);
 
+-- 2. Helper Functions (SECURITY DEFINER = الحل للـ recursion)
+CREATE OR REPLACE FUNCTION public.check_is_admin(check_user_id uuid)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.admin_users
+    WHERE id = check_user_id AND is_active = true
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.has_min_role(check_user_id uuid, required_role text)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.admin_users
+    WHERE id = check_user_id
+      AND is_active = true
+      AND (
+        role = 'super_admin'
+        OR (required_role = 'admin' AND role IN ('admin', 'super_admin'))
+        OR (required_role = 'moderator' AND role IN ('moderator', 'admin', 'super_admin'))
+      )
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.check_is_admin(uuid) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION public.has_min_role(uuid, text) TO authenticated, anon;
+
+-- 3. Enable RLS + Policies (بدون recursion)
 ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 
--- Policies مرنة جداً - أي logged-in user يقدر يقرأ
 DROP POLICY IF EXISTS "Anyone authenticated can read admin_users" ON public.admin_users;
-CREATE POLICY "Anyone authenticated can read admin_users"
+DROP POLICY IF EXISTS "Super admins can manage admin_users" ON public.admin_users;
+DROP POLICY IF EXISTS "Allow first admin bootstrap" ON public.admin_users;
+DROP POLICY IF EXISTS "Admins can view admin_users" ON public.admin_users;
+DROP POLICY IF EXISTS "Authenticated can read admin_users" ON public.admin_users;
+DROP POLICY IF EXISTS "First admin can self-insert" ON public.admin_users;
+
+-- قراءة: أي مستخدم مسجل يقدر يقرأ
+CREATE POLICY "Authenticated can read admin_users"
   ON public.admin_users FOR SELECT
   TO authenticated
   USING (true);
 
-DROP POLICY IF EXISTS "Super admins can manage admin_users" ON public.admin_users;
+-- كتابة: super_admin بس (باستخدام function)
 CREATE POLICY "Super admins can manage admin_users"
   ON public.admin_users FOR ALL
   TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.admin_users au
-      WHERE au.id = auth.uid() AND au.role = 'super_admin' AND au.is_active = true
-    )
-  );
+  USING (public.has_min_role(auth.uid(), 'admin'))
+  WITH CHECK (public.has_min_role(auth.uid(), 'admin'));
 
--- بدل الـ RLS المعقد، نسمح للمستخدم بترقية نفسه إذا كان أول أدمن
-DROP POLICY IF EXISTS "Allow first admin bootstrap" ON public.admin_users;
-CREATE POLICY "Allow first admin bootstrap"
+-- bootstrap: أول أدمن يقدر يضيف نفسه
+CREATE POLICY "First admin can self-insert"
   ON public.admin_users FOR INSERT
   TO authenticated
   WITH CHECK (
-    -- لو مفيش أي أدمن، السماح
-    NOT EXISTS (SELECT 1 FROM public.admin_users WHERE is_active = true)
+    NOT EXISTS (SELECT 1 FROM public.admin_users LIMIT 1)
   );
 
--- سجل نشاط الأدمن
+-- 4. سجل نشاط الأدمن
 CREATE TABLE IF NOT EXISTS public.admin_audit_log (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   admin_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
@@ -81,14 +124,19 @@ CREATE TABLE IF NOT EXISTS public.admin_audit_log (
 
 ALTER TABLE public.admin_audit_log ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Admins can view audit" ON public.admin_audit_log;
+DROP POLICY IF EXISTS "Authenticated can insert audit" ON public.admin_audit_log;
+
 CREATE POLICY "Admins can view audit"
   ON public.admin_audit_log FOR SELECT
   TO authenticated
-  USING (
-    EXISTS (SELECT 1 FROM public.admin_users WHERE id = auth.uid() AND is_active = true)
-  );
+  USING (public.check_is_admin(auth.uid()));
 
--- إعدادات الموقع
+CREATE POLICY "Authenticated can insert audit"
+  ON public.admin_audit_log FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = admin_id);
+
+-- 5. إعدادات الموقع
 CREATE TABLE IF NOT EXISTS public.site_settings (
   key text PRIMARY KEY,
   value jsonb NOT NULL,
@@ -98,12 +146,17 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
 
 ALTER TABLE public.site_settings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anyone reads settings" ON public.site_settings;
-CREATE POLICY "Anyone reads settings" ON public.site_settings FOR SELECT USING (true);
-
 DROP POLICY IF EXISTS "Admins manage settings" ON public.site_settings;
-CREATE POLICY "Admins manage settings" ON public.site_settings FOR ALL
+
+CREATE POLICY "Anyone reads settings"
+  ON public.site_settings FOR SELECT
+  USING (true);
+
+CREATE POLICY "Admins manage settings"
+  ON public.site_settings FOR ALL
   TO authenticated
-  USING (EXISTS (SELECT 1 FROM public.admin_users WHERE id = auth.uid() AND is_active = true));
+  USING (public.check_is_admin(auth.uid()))
+  WITH CHECK (public.check_is_admin(auth.uid()));
 
 INSERT INTO public.site_settings (key, value, description) VALUES
   ('site_name', '"PDF Smart Hub"'::jsonb, 'اسم الموقع'),
@@ -112,14 +165,12 @@ INSERT INTO public.site_settings (key, value, description) VALUES
   ('daily_operations_limit', '100'::jsonb, 'عدد العمليات اليومية')
 ON CONFLICT (key) DO NOTHING;
 
--- Helper Function
-CREATE OR REPLACE FUNCTION public.is_admin(check_user_id uuid)
-RETURNS boolean LANGUAGE sql SECURITY DEFINER STABLE AS $$
-  SELECT EXISTS (SELECT 1 FROM public.admin_users WHERE id = check_user_id AND is_active = true);
-$$;
+-- 6. Views
+DROP VIEW IF EXISTS public.admin_stats CASCADE;
+DROP VIEW IF EXISTS public.popular_tools CASCADE;
+DROP VIEW IF EXISTS public.active_users CASCADE;
 
--- Views
-CREATE OR REPLACE VIEW public.admin_stats AS
+CREATE VIEW public.admin_stats AS
 SELECT
   (SELECT COUNT(*) FROM auth.users) AS total_users,
   (SELECT COUNT(*) FROM auth.users WHERE created_at > NOW() - INTERVAL '24 hours') AS new_users_24h,
@@ -131,7 +182,7 @@ SELECT
   (SELECT COALESCE(SUM(file_size), 0) FROM public.processing_history) AS total_bytes_processed,
   (SELECT COUNT(*) FROM public.admin_users WHERE is_active = true) AS active_admins;
 
-CREATE OR REPLACE VIEW public.popular_tools AS
+CREATE VIEW public.popular_tools AS
 SELECT
   tool_type,
   COUNT(*) AS usage_count,
@@ -142,7 +193,7 @@ WHERE created_at > NOW() - INTERVAL '30 days'
 GROUP BY tool_type
 ORDER BY usage_count DESC;
 
-CREATE OR REPLACE VIEW public.active_users AS
+CREATE VIEW public.active_users AS
 SELECT
   u.id,
   u.email,
@@ -158,7 +209,13 @@ LEFT JOIN LATERAL (
   SELECT COUNT(*) AS op_count, MAX(created_at) AS last_operation
   FROM public.processing_history ph WHERE ph.user_id = u.id
 ) stats ON true
-ORDER BY u.created_at DESC;`;
+ORDER BY u.created_at DESC;
+
+GRANT SELECT ON public.admin_stats TO authenticated;
+GRANT SELECT ON public.popular_tools TO authenticated;
+GRANT SELECT ON public.active_users TO authenticated;
+
+-- ✅ DONE! جرب تسجيل الدخول كأدمن دلوقتي`;
 
 export default function AdminSetupPage() {
   const [copied, setCopied] = useState<string | null>(null);
