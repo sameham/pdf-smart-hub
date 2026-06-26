@@ -1,3 +1,4 @@
+// Updated homepage
 import Link from "next/link";
 import { ArrowLeft, FileText, Zap, Lock, Shield, Sparkles, MessageCircle, Star, Users, Globe } from "lucide-react";
 
