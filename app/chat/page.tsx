@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { MessageCircle, Upload, Send, Bot, User, FileText, Trash2, Sparkles, AlertCircle, Loader2 } from 'lucide-react'
-import { toast } from 'react-hot-toast'
+import { toast } from 'sonner'
 
 interface Message {
   id: string
