@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "sonner";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/footer";
+import { BackToTop } from "@/components/BackToTop";
 import Script from "next/script";
 
 const tajawal = Tajawal({
@@ -139,6 +140,7 @@ export default function RootLayout({
           {children}
         </main>
         <Footer />
+        <BackToTop />
         <Toaster
           position="top-center"
           richColors

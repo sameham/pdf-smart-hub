@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e40af"/>
+      <stop offset="100%" style="stop-color:#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.15"/>
+      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0.05"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Grid pattern -->
+  <g opacity="0.07">
+    <line x1="0" y1="105" x2="1200" y2="105" stroke="white" stroke-width="1"/>
+    <line x1="0" y1="210" x2="1200" y2="210" stroke="white" stroke-width="1"/>
+    <line x1="0" y1="315" x2="1200" y2="315" stroke="white" stroke-width="1"/>
+    <line x1="0" y1="420" x2="1200" y2="420" stroke="white" stroke-width="1"/>
+    <line x1="0" y1="525" x2="1200" y2="525" stroke="white" stroke-width="1"/>
+    <line x1="200" y1="0" x2="200" y2="630" stroke="white" stroke-width="1"/>
+    <line x1="400" y1="0" x2="400" y2="630" stroke="white" stroke-width="1"/>
+    <line x1="600" y1="0" x2="600" y2="630" stroke="white" stroke-width="1"/>
+    <line x1="800" y1="0" x2="800" y2="630" stroke="white" stroke-width="1"/>
+    <line x1="1000" y1="0" x2="1000" y2="630" stroke="white" stroke-width="1"/>
+  </g>
+
+  <!-- Glow circles -->
+  <circle cx="900" cy="150" r="250" fill="#60a5fa" opacity="0.15"/>
+  <circle cx="200" cy="500" r="200" fill="#93c5fd" opacity="0.1"/>
+
+  <!-- Logo icon -->
+  <rect x="80" y="180" width="80" height="80" rx="20" fill="white" opacity="0.2"/>
+  <rect x="95" y="195" width="50" height="6" rx="3" fill="white" opacity="0.9"/>
+  <rect x="95" y="209" width="50" height="6" rx="3" fill="white" opacity="0.7"/>
+  <rect x="95" y="223" width="38" height="6" rx="3" fill="white" opacity="0.5"/>
+  <rect x="95" y="237" width="50" height="6" rx="3" fill="white" opacity="0.7"/>
+
+  <!-- Main Title Arabic -->
+  <text x="600" y="260" font-family="Arial, sans-serif" font-size="72" font-weight="bold"
+        fill="white" text-anchor="middle" dominant-baseline="middle">PDF Smart Hub</text>
+
+  <!-- Subtitle Arabic -->
+  <text x="600" y="340" font-family="Arial, sans-serif" font-size="36"
+        fill="white" text-anchor="middle" opacity="0.85">أدوات PDF مجانية وذكية</text>
+
+  <!-- Tool badges -->
+  <g transform="translate(170, 410)">
+    <rect width="150" height="44" rx="22" fill="white" opacity="0.15"/>
+    <text x="75" y="22" font-family="Arial" font-size="18" fill="white" text-anchor="middle" dominant-baseline="middle">ضغط PDF</text>
+  </g>
+  <g transform="translate(340, 410)">
+    <rect width="150" height="44" rx="22" fill="white" opacity="0.15"/>
+    <text x="75" y="22" font-family="Arial" font-size="18" fill="white" text-anchor="middle" dominant-baseline="middle">دمج PDF</text>
+  </g>
+  <g transform="translate(510, 410)">
+    <rect width="150" height="44" rx="22" fill="white" opacity="0.15"/>
+    <text x="75" y="22" font-family="Arial" font-size="18" fill="white" text-anchor="middle" dominant-baseline="middle">تقسيم PDF</text>
+  </g>
+  <g transform="translate(680, 410)">
+    <rect width="150" height="44" rx="22" fill="white" opacity="0.15"/>
+    <text x="75" y="22" font-family="Arial" font-size="18" fill="white" text-anchor="middle" dominant-baseline="middle">OCR نصوص</text>
+  </g>
+  <g transform="translate(850, 410)">
+    <rect width="150" height="44" rx="22" fill="white" opacity="0.15"/>
+    <text x="75" y="22" font-family="Arial" font-size="18" fill="white" text-anchor="middle" dominant-baseline="middle">تحويل Word</text>
+  </g>
+
+  <!-- Bottom tagline -->
+  <text x="600" y="540" font-family="Arial, sans-serif" font-size="26"
+        fill="white" text-anchor="middle" opacity="0.7">www.pdfsmarthub.com</text>
+</svg>
