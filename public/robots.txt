@@ -1,0 +1,31 @@
+User-agent: *
+Allow: /
+
+# Allow all PDF tool pages
+Allow: /compress-pdf
+Allow: /merge-pdf
+Allow: /split-pdf
+Allow: /pdf-to-image
+Allow: /image-to-pdf
+Allow: /word-to-pdf
+Allow: /pdf-to-word
+Allow: /ocr
+Allow: /rotate-pdf
+Allow: /watermark-pdf
+Allow: /unlock-pdf
+Allow: /protect-pdf
+
+# Allow important pages
+Allow: /pricing
+Allow: /blog
+Allow: /chat
+Allow: /about
+
+# Disallow private areas
+Disallow: /admin
+Disallow: /api/
+Disallow: /_next/
+Disallow: /dashboard
+
+# Sitemap
+Sitemap: https://www.pdfsmarthub.com/sitemap.xml
