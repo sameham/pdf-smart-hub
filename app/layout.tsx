@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/footer";
 import { BackToTop } from "@/components/BackToTop";
+import { ThemeProvider } from "@/components/ThemeProvider";
 import Script from "next/script";
 
 const tajawal = Tajawal({
@@ -109,6 +110,16 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl" className={tajawal.variable}>
       <head>
+        {/* Prevent flash of wrong theme */}
+        <script dangerouslySetInnerHTML={{ __html: `
+          try {
+            var t = localStorage.getItem('theme');
+            var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (t === 'dark' || (!t || t === 'system') && prefersDark) {
+              document.documentElement.classList.add('dark');
+            }
+          } catch(e) {}
+        `}} />
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <meta name="google-site-verification" content="your-verification-code" />
@@ -120,6 +131,7 @@ export default function RootLayout({
         />
       </head>
       <body className={`${tajawal.className} antialiased min-h-screen bg-background text-foreground`}>
+        <ThemeProvider>
         {/* Google Analytics */}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"
@@ -147,6 +159,7 @@ export default function RootLayout({
           duration={3000}
           closeButton
         />
+        </ThemeProvider>
       </body>
     </html>
   );

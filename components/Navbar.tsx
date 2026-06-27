@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { ChevronDown, Menu, X, FileText, MessageCircle, LogOut, User } from 'lucide-react'
+import { ChevronDown, Menu, X, FileText, MessageCircle, LogOut } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
+import { ThemeToggle } from './ThemeToggle'
 
 const TOOLS_MENU = [
   { href: '/merge-pdf', label: 'دمج PDF', icon: '📎' },
@@ -103,8 +104,9 @@ export function Navbar() {
             </Link>
           </div>
 
-          {/* Auth */}
+          {/* Auth + Theme */}
           <div className="hidden md:flex items-center gap-3">
+            <ThemeToggle />
             {user ? (
               <>
                 <Link href="/dashboard" className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-600 transition">
@@ -127,13 +129,16 @@ export function Navbar() {
             )}
           </div>
 
-          {/* Mobile Toggle */}
-          <button
-            className="md:hidden p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
-            onClick={() => setMobileOpen(!mobileOpen)}
-          >
-            {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
+          {/* Mobile: Theme + Menu toggle */}
+          <div className="md:hidden flex items-center gap-2">
+            <ThemeToggle />
+            <button
+              className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+              onClick={() => setMobileOpen(!mobileOpen)}
+            >
+              {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
+          </div>
         </div>
       </div>
 
